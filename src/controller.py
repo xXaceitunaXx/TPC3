@@ -121,18 +121,11 @@ class Controller:
     def get_list_fish_pos(self):
         return self.fish_pos
     
-    def get_list_dangerous_fish(self):
-        fish = [False] * len(self.fish_state)
+    def get_list_fish_state(self):
+        fish = [-1] * len(self.fish_state)
         for i, current in enumerate(self.fish_state):
-            if (current == 1 or current == 2 or current == 3):
-                fish[i] = True
-        return fish
-    
-    def get_list_grabbable_fish(self):
-        fish = [False] * len(self.fish_state)
-        for i, current in enumerate(self.fish_state):
-            if (current == 0):
-                fish[i] = True
+            if (current == 0 or current == 1 or current == 2 or current == 3):
+                fish[i] = current
         return fish
     
     def is_grabbing_fish(self):
