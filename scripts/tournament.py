@@ -30,22 +30,29 @@ class Tournament:
 
         name = str(data["name"]).strip()
         participants = [str(t).strip() for t in data["participants"] if str(t).strip()]
+        
+
+        levels = data.get("levels", ["."])
 
         if not name:
             sys.exit("Error: Tournament name cannot be empty")
         if len(participants) < 2:
             sys.exit("Error: At least two participants are required")
 
-        return cls(name, participants)
+        return cls(name, participants, levels)
 
-    def __init__(self, name, participants):
+    def __init__(self, name, participants, levels=None):
         self.name = name
         self.participants = participants
+        self.levels = levels or ["."]
         self.bracket = []
         self.results = []
         self.finished = False
 
         self._build_tree()
+        
+        if len(self.levels) < len(self.bracket):
+            sys.exit(f"Error: Faltan conjuntos de niveles en el archivo de configuración. Se necesitan {len(self.bracket)} conjuntos para {len(self.participants)} participantes, pero se proporcionaron solo {len(self.levels)}.")
 
     def _ascii_tree(self):
         if not self.bracket: return ""
@@ -159,11 +166,23 @@ class Tournament:
         free = size - len(teams)
         teams.extend([None] * free)
 
+        # Generar orden de cruces estándar para repartir los BYEs
+        seeds = [0]
+        while len(seeds) < size:
+            curr_len = len(seeds)
+            next_seeds = []
+            for s in seeds:
+                next_seeds.append(s)
+                next_seeds.append(curr_len * 2 - 1 - s)
+            seeds = next_seeds
+            
+        ordered_teams = [teams[i] for i in seeds]
+
         first_round = []
         match_num = 1
 
-        for i in range(0, len(teams), 2):
-            match = self._new_match(f"R1M{match_num}", 0, teams[i], teams[i + 1])
+        for i in range(0, len(ordered_teams), 2):
+            match = self._new_match(f"R1M{match_num}", 0, ordered_teams[i], ordered_teams[i + 1])
             first_round.append(match)
             match_num += 1
         self.bracket.append(first_round)
@@ -199,6 +218,14 @@ class Tournament:
 
         self._auto_pass()
         self._sync_done()
+
+    @property
+    def winner(self):
+        if not self.bracket: return None
+        for m in self.bracket[-1]:
+            if m["id"] != "THIRD_PLACE":
+                return m.get("winner")
+        return None
 
     def is_finished(self):
         return self.finished
@@ -265,12 +292,29 @@ class Tournament:
                     continue
                 self._fill_teams(match)
                 a, b = match["team_a"], match["team_b"]
+                
+                def is_dead_end(slot, val):
+                    if val is not None: return False
+                    if slot is None: return True
+                    if not isinstance(slot, dict): return False
+                    source = self._get_match(slot["match_id"])
+                    # Retorna True si el partido previo ya se jugó y su resultado dio None.
+                    if source["played"]:
+                        key = slot.get("type", "winner")
+                        if key == "loser": return source.get("loser") is None
+                        return source.get("winner") is None
+                    return False
+                    
                 if a is None and b is None:
+                    if is_dead_end(match["slot_a"], a) and is_dead_end(match["slot_b"], b):
+                        self._set_result(match["id"], None, auto=True)
+                        changed = True
                     continue
-                if a is not None and b is None and match["slot_b"] is None:
+                    
+                if a is not None and is_dead_end(match["slot_b"], b):
                     self._set_result(match["id"], a, auto=True)
                     changed = True
-                elif b is not None and a is None and match["slot_a"] is None:
+                elif b is not None and is_dead_end(match["slot_a"], a):
                     self._set_result(match["id"], b, auto=True)
                     changed = True
 
@@ -296,7 +340,9 @@ class Tournament:
         team_b = match["team_b"]
 
         root = Path(__file__).resolve().parent.parent
-        cmd = [sys.executable, "main.py", team_a, team_b, "--full-screen"]
+        match_round = match["round"]
+        levels_dir = self.levels[match_round] if match_round < len(self.levels) else self.levels[-1]
+        cmd = [sys.executable, "main.py", team_a, team_b, "--full-screen", "--levels-dir", levels_dir]
 
         while True:
             proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)

@@ -1,0 +1,10 @@
+{
+    "name": "Test",
+    "participants": [
+        "example",
+        "keyboard_controller"
+    ],
+    "levels": [
+        "final"
+    ]
+}
